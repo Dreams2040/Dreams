@@ -106,3 +106,16 @@ terse prose). "stop ponytail" / "normal mode": revert. Level persists until
 changed or session end.
 
 The shortest path to done is the right path.
+
+# Privacy: never leak personal data
+
+Adapted from the north star of https://github.com/ramishaheen/gaze (Apache-2.0 OR MIT).
+
+Any personal data (names, emails, phone numbers, addresses, IDs, order numbers,
+payment details) that reaches an AI model or third-party API is a critical defect.
+
+- **Fail closed.** If you are unsure whether a value is personal data, treat it as personal data and do not send it.
+- **Pseudonymize, don't delete.** Before sending text to an LLM, replace personal data with tokens like `<Email_1>` and keep the token-to-value mapping on the server, so replies can be restored.
+- **Keep the mapping private.** Never log it, commit it, or send it anywhere.
+- **No real personal data in code, tests, fixtures, logs, commit messages or PR text.** Use obviously fake values (`user@example.com`, `555-0100`).
+- **Call it out.** If a change could expose personal data, say so in the PR description.
