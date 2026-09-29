@@ -56,29 +56,32 @@ function toast(msg, type = 'ok') {
 
 function modal(title, html, buttons = [{ label: 'إغلاق' }], { wide, onOpen } = {}) {
   return new Promise(resolve => {
-    const root = $('#modal-root');
-    root.innerHTML = `<div class="overlay"><div class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    const root = $('#modal-root'), prev = document.activeElement;
+    // <dialog> + showModal(): خلفية خاملة، حصر التنقل بـ Tab، وEsc تلقائيًا
+    root.innerHTML = `<dialog class="modal ${wide ? 'wide' : ''}" aria-labelledby="m-title">
       <header><h3 id="m-title">${esc(title)}</h3><button class="icon-btn" data-m="x" aria-label="إغلاق">✕</button></header>
       <div class="m-body">${html}</div><p class="m-err" role="alert"></p>
       <footer>${buttons.map((b, i) => `<button class="btn ${b.cls || 'ghost'}" data-m="${i}">${esc(b.label)}</button>`).join('')}</footer>
-    </div></div>`;
-    const box = $('.modal', root);
-    const onKey = e => e.key === 'Escape' && close(null);
-    const close = v => { root.innerHTML = ''; root.onclick = null; document.removeEventListener('keydown', onKey); resolve(v); };
-    document.addEventListener('keydown', onKey);
-    root.onclick = async e => {
-      if (e.target.classList.contains('overlay')) return close(null);
+    </dialog>`;
+    const box = $('dialog', root);
+    let busy = false, result = null;
+    const close = v => { result = v; box.close(); };
+    box.addEventListener('cancel', e => busy && e.preventDefault());   // لا إغلاق أثناء تنفيذ الإجراء
+    box.addEventListener('close', () => { root.innerHTML = ''; prev?.focus?.(); resolve(result); });
+    box.onclick = async e => {
+      if (e.target === box && !busy) return close(null);   // نقرة على الخلفية
       const m = e.target.closest('[data-m]')?.dataset.m;
-      if (m === undefined) return;
+      if (m === undefined || busy) return;
       if (m === 'x') return close(null);
       const b = buttons[+m];
       if (!b.run) return close(b.value ?? null);
       const btn = e.target.closest('button');
-      btn.disabled = true;
-      try { const v = await b.run(box); if (v !== false) close(v ?? true); }
+      btn.disabled = busy = true;
+      try { const v = await b.run(box); busy = false; if (v !== false) close(v ?? true); }
       catch (err) { $('.m-err', box).textContent = err.message; }
-      finally { btn.disabled = false; }
+      finally { busy = false; btn.disabled = false; }
     };
+    box.showModal();
     onOpen?.(box);
     ($('input:not([type=hidden]),textarea,select', box) || $('footer .btn', box))?.focus();
   });
@@ -103,7 +106,7 @@ function shell(content) {
   <header class="topbar no-print">
     <a class="brand" href="${home()}"><img src="/logo.svg" alt="" width="38" height="38"><span><b>نظام إدارة طلبات التفرغ الجزئي</b><small>${esc(state.cfg.org)}</small></span></a>
     <div class="top-actions">
-      <a class="icon-btn bell" href="#/notifications" aria-label="الإشعارات">${icon('bell')}<span class="count" ${state.unread ? '' : 'hidden'}>${state.unread}</span></a>
+      <a class="icon-btn bell" href="#/notifications" aria-label="${state.unread ? `الإشعارات (${state.unread} غير مقروءة)` : 'الإشعارات'}">${icon('bell')}<span class="count" ${state.unread ? '' : 'hidden'}>${state.unread}</span></a>
       <div class="who"><b>${esc(u.full_name)}</b><small>${esc(u.role_label)}</small></div>
       <button class="btn ghost sm" data-act="logout">خروج</button>
     </div>
@@ -188,6 +191,7 @@ function viewLogin() {
     if (!f.username || !f.password) return void (err.textContent = 'أدخل اسم المستخدم وكلمة المرور');
     try {
       state.user = (await api('/login', { method: 'POST', body: f })).user;
+      state.unread = (await api('/me')).unread;
       state.lk = null;
       location.hash = home();
     } catch (x) { err.textContent = x.message; }
@@ -332,15 +336,15 @@ async function viewWizard(params, id, step = '1') {
 function drawWizard(W) {
   const { d, details: v, step, errors } = W, r = d.request;
   const completion = r.status === 'needs_completion' ? d.comments.filter(c => c.kind === 'completion').pop() : null;
-  const progress = `<ol class="steps">${STEPS.map((s, i) => `<li class="${i + 1 === step ? 'on' : i + 1 < step ? 'done' : ''}"><button type="button" data-act="goto" data-step="${i + 1}"><span>${i + 1 < step ? '✓' : i + 1}</span>${s}</button></li>`).join('')}</ol>
-    <div class="progress" role="progressbar" aria-valuemin="1" aria-valuemax="4" aria-valuenow="${step}"><i style="width:${step * 25}%"></i></div>`;
+  const progress = `<ol class="steps">${STEPS.map((s, i) => `<li class="${i + 1 === step ? 'on' : i + 1 < step ? 'done' : ''}"${i + 1 === step ? ' aria-current="step"' : ''}><button type="button" data-act="goto" data-step="${i + 1}"><span>${i + 1 < step ? '✓' : i + 1}</span>${s}</button></li>`).join('')}</ol>
+    <div class="progress" role="progressbar" aria-label="تقدم الطلب" aria-valuetext="الخطوة ${step} من 4: ${STEPS[step - 1]}" aria-valuemin="1" aria-valuemax="4" aria-valuenow="${step}"><i style="width:${step * 25}%"></i></div>`;
   const tf = state.lk.teacher_fields;
   let body = '';
   if (step === 1) {
     body = `<h2>بيانات المعلم</h2><p class="muted">عُبئت البيانات تلقائيًا من سجلك الوظيفي. الحقول المقفلة 🔒 تُعدَّل من مدير النظام فقط.</p>
       <div class="grid">${tf.map(([n, l, ed]) => `<div class="field ${errors[n] ? 'has-err' : ''}"><label for="f_${n}">${esc(l)} ${ed ? '<i class="req">*</i>' : '🔒'}</label>
-      <input id="f_${n}" ${ed ? `data-field="${n}"` : 'readonly class="locked"'} type="${n === 't_email' ? 'email' : n === 't_phone' ? 'tel' : 'text'}" value="${esc(v[n])}">
-      ${errors[n] ? `<small class="err">${esc(errors[n])}</small>` : ''}</div>`).join('')}</div>`;
+      <input id="f_${n}"${errors[n] ? ` aria-invalid="true" aria-describedby="f_${n}-err"` : ''} ${ed ? `data-field="${n}"` : 'readonly class="locked"'} type="${n === 't_email' ? 'email' : n === 't_phone' ? 'tel' : 'text'}" value="${esc(v[n])}">
+      ${errors[n] ? `<small class="err" id="f_${n}-err">${esc(errors[n])}</small>` : ''}</div>`).join('')}</div>`;
   } else if (step === 2) {
     body = `<h2>بيانات طلب التفرغ</h2><div class="grid">${d.fields.filter(f => visibleF(f, v)).map(f => fieldInput(f, v[f.name], errors[f.name])).join('')}</div>`;
   } else if (step === 3) {
@@ -360,6 +364,10 @@ function drawWizard(W) {
           : `<button class="btn primary" data-act="submit">${r.status === 'needs_completion' ? 'إعادة إرسال الطلب' : 'إرسال الطلب'}</button>`}
       </div>
     </footer></section>`);
+  // بعد كل إعادة رسم: التركيز على ملخص الأخطاء أو أول حقل خاطئ أو عنوان الخطوة
+  const h2 = $('.step-body h2');
+  h2?.setAttribute('tabindex', '-1');
+  ($('.step-body .alert.err') || $('.has-err input, .has-err select, .has-err textarea') || h2)?.focus();
 }
 
 function completionAlert(c) {
@@ -370,16 +378,17 @@ function completionAlert(c) {
 }
 
 function fieldInput(f, v, err) {
-  const id = 'f_' + f.name, req = f.required ? ' <i class="req">*</i>' : '', e = err ? `<small class="err">${esc(err)}</small>` : '';
+  const id = 'f_' + f.name, req = f.required ? ' <i class="req">*</i>' : '';
+  const e = err ? `<small class="err" id="${id}-err">${esc(err)}</small>` : '', a = err ? ` aria-invalid="true" aria-describedby="${id}-err"` : '';
   if (f.kind === 'checkbox') {
-    return `<div class="field full ${err ? 'has-err' : ''}"><label class="check"><input type="checkbox" data-field="${f.name}" value="1" ${v === '1' ? 'checked' : ''}><span>${esc(f.label)}${req}</span></label>
+    return `<div class="field full ${err ? 'has-err' : ''}"><label class="check"><input type="checkbox" id="${id}"${a} data-field="${f.name}" value="1" ${v === '1' ? 'checked' : ''}><span>${esc(f.label)}${req}</span></label>
       ${f.name === 'contract_ack' ? '<button type="button" class="link" data-act="contract">عرض بنود العقد</button>' : ''}${e}</div>`;
   }
   let input;
-  if (f.kind === 'select') input = `<select id="${id}" data-field="${f.name}"><option value="">اختر…</option>${f.options.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
-  else if (f.kind === 'textarea') input = `<textarea id="${id}" data-field="${f.name}" rows="3">${esc(v)}</textarea>`;
+  if (f.kind === 'select') input = `<select id="${id}"${a} data-field="${f.name}"><option value="">اختر…</option>${f.options.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  else if (f.kind === 'textarea') input = `<textarea id="${id}"${a} data-field="${f.name}" rows="3">${esc(v)}</textarea>`;
   else if (f.kind === 'computed') input = `<input id="${id}" readonly class="locked" data-computed="${f.name}" value="${esc(v)}" placeholder="يُحسب تلقائيًا">`;
-  else input = `<input id="${id}" data-field="${f.name}" type="${{ date: 'date', number: 'number', email: 'email', tel: 'tel' }[f.kind] || 'text'}" value="${esc(v)}"${f.min != null ? ` min="${f.min}"` : ''}${f.max != null ? ` max="${f.max}"` : ''}>`;
+  else input = `<input id="${id}"${a} data-field="${f.name}" type="${{ date: 'date', number: 'number', email: 'email', tel: 'tel' }[f.kind] || 'text'}" value="${esc(v)}"${f.min != null ? ` min="${f.min}"` : ''}${f.max != null ? ` max="${f.max}"` : ''}>`;
   return `<div class="field ${f.kind === 'textarea' ? 'full' : ''} ${err ? 'has-err' : ''}"><label for="${id}">${esc(f.label)}${req}</label>${input}${e}</div>`;
 }
 
@@ -411,13 +420,13 @@ function reviewStep(W) {
   const errList = Object.entries(errors).filter(([k]) => k !== 'declaration');
   const byType = new Set(d.documents.map(x => x.doc_type_id));
   return `<h2>مراجعة الطلب قبل الإرسال</h2>
-    ${errList.length ? `<div class="alert err"><b>لا يمكن إرسال الطلب قبل استكمال ما يلي:</b><ul>${errList.map(([k, m]) => `<li>${esc(m)} — <button class="link" data-act="goto" data-step="${stepOf(k)}">انتقل للخطوة ${stepOf(k)}</button></li>`).join('')}</ul></div>` : ''}
+    ${errList.length ? `<div class="alert err" role="alert" tabindex="-1"><b>لا يمكن إرسال الطلب قبل استكمال ما يلي:</b><ul>${errList.map(([k, m]) => `<li>${esc(m)} — <button class="link" data-act="goto" data-step="${stepOf(k)}">انتقل للخطوة ${stepOf(k)}</button></li>`).join('')}</ul></div>` : ''}
     <section class="review"><header><h3>بيانات المعلم</h3><button class="link" data-act="goto" data-step="1">تعديل</button></header>${dl(teacherPairs(v))}</section>
     <section class="review"><header><h3>بيانات التفرغ</h3><button class="link" data-act="goto" data-step="2">تعديل</button></header>${dl(leavePairs(d.fields, v))}</section>
     <section class="review"><header><h3>المستندات</h3><button class="link" data-act="goto" data-step="3">تعديل</button></header>
       <ul class="doc-check">${d.doc_types.map(t => `<li class="${byType.has(t.id) ? 'ok-text' : t.required ? 'err' : 'muted'}">${byType.has(t.id) ? '✓' : '✗'} ${esc(t.name)}${t.required ? '' : ' (اختياري)'}</li>`).join('')}</ul></section>
-    <label class="check declaration ${errors.declaration ? 'has-err' : ''}"><input type="checkbox" id="declaration"><span>أقر بأن جميع البيانات المدخلة صحيحة، وأتحمل كامل المسؤولية في حالة ثبوت خلاف ذلك.</span></label>
-    ${errors.declaration ? `<small class="err">${esc(errors.declaration)}</small>` : ''}`;
+    <label class="check declaration ${errors.declaration ? 'has-err' : ''}"><input type="checkbox" id="declaration"${errors.declaration ? ' aria-invalid="true" aria-describedby="declaration-err"' : ''}><span>أقر بأن جميع البيانات المدخلة صحيحة، وأتحمل كامل المسؤولية في حالة ثبوت خلاف ذلك.</span></label>
+    ${errors.declaration ? `<small class="err" id="declaration-err">${esc(errors.declaration)}</small>` : ''}`;
 }
 
 // ───── عرض الطلب ومتابعته ومراجعته ─────
@@ -483,7 +492,7 @@ async function viewRequest(params, id) {
           ${r.status === 'submitted' || r.status === 'resubmitted' ? '<p class="muted">ابدأ باستلام الطلب لتتمكن من مراجعته واتخاذ الإجراء.</p>' : ''}</section>` : ''}
         ${reviewing ? `<section class="card"><h2>قائمة التحقق</h2><div class="checklist">${state.lk.checklist.map(([k, l]) => `<label class="check"><input type="checkbox" data-check="${k}" ${checklist[k] ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div>
           ${r.prelim_approved ? '<p class="ok-text">✓ تم الاعتماد المبدئي، ويمكن الآن إحالة الطلب.</p>' : '<p class="muted">يجب تأشير جميع البنود قبل الاعتماد المبدئي.</p>'}</section>` : ''}
-        ${staff && r.status !== 'draft' ? `<section class="card ai"><header class="card-head"><h2>✦ المساعد الذكي</h2><button class="btn sm ghost" data-act="assist">تحليل الطلب</button></header><div id="assist"><p class="muted">يلخّص الطلب ويكتشف البيانات والمستندات الناقصة ويقترح قائمة التحقق. لا يتخذ أي قرار.</p></div></section>` : ''}
+        ${staff && r.status !== 'draft' ? `<section class="card ai"><header class="card-head"><h2>✦ المساعد الذكي</h2><button class="btn sm ghost" data-act="assist">تحليل الطلب</button></header><div id="assist" aria-live="polite"><p class="muted">يلخّص الطلب ويكتشف البيانات والمستندات الناقصة ويقترح قائمة التحقق. لا يتخذ أي قرار.</p></div></section>` : ''}
         <section class="card"><h2>بيانات المعلم</h2>${dl(teacherPairs(v))}</section>
         <section class="card"><h2>بيانات طلب التفرغ</h2>${dl(leavePairs(d.fields, v))}</section>
         <section class="card"><h2>المستندات</h2>${docsTable(d, {}, true)}</section>
@@ -656,7 +665,7 @@ function columnChart(title, data) {
     ${data.length ? `<div class="cols">${data.map(([label, value]) => `<div class="col" title="${esc(label)}: ${value}"><b>${value}</b><span class="col-bar" style="height:${Math.max(2, value / max * 100)}%"></span><small>${esc(label).replace(' ', '<br>')}</small></div>`).join('')}</div>` : empty('لا توجد بيانات')}
     ${dataTable(data)}</section>`;
 }
-const dataTable = data => data.length ? `<details><summary>عرض البيانات كجدول</summary><table class="table compact"><tbody>${data.map(([l, v]) => `<tr><td>${esc(l)}</td><td>${v}</td></tr>`).join('')}</tbody></table></details>` : '';
+const dataTable = data => data.length ? `<details><summary>عرض البيانات كجدول</summary><table class="table compact"><thead><tr><th scope="col">البند</th><th scope="col">العدد</th></tr></thead><tbody>${data.map(([l, v]) => `<tr><th scope="row">${esc(l)}</th><td>${v}</td></tr>`).join('')}</tbody></table></details>` : '';
 
 async function viewStats(params) {
   const f = Object.fromEntries(params), q = new URLSearchParams(f);
@@ -855,6 +864,7 @@ async function render() {
       if (roles && !roles.includes(state.user.role)) break;
       await fn(new URLSearchParams(qs || ''), ...m.slice(1).filter(x => x !== undefined));
       $('#view')?.focus({ preventScroll: true });
+      document.title = `${$('#view h1')?.textContent.trim() || 'الرئيسية'} — نظام التفرغ الجزئي`;
       return;
     }
     location.hash = home();
@@ -882,6 +892,7 @@ setInterval(async () => {
     const { unread } = await api('/me');
     state.unread = unread;
     const c = $('.bell .count');
+    $('.bell')?.setAttribute('aria-label', unread ? `الإشعارات (${unread} غير مقروءة)` : 'الإشعارات');
     if (c) { c.textContent = unread; c.hidden = !unread; }
   } catch { /* تجاهل أخطاء الشبكة المؤقتة */ }
 }, 60000);
