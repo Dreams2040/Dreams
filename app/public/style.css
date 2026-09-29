@@ -49,7 +49,7 @@ html { scroll-padding-top: 72px; }
 .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 
 /* الإطار */
-.topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+.topbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .55rem 1.25rem; background: linear-gradient(90deg, var(--primary-dark), var(--primary)); color: #fff; }
 .brand { display: flex; align-items: center; gap: .6rem; color: #fff; min-width: 0; }
 .brand:hover { text-decoration: none; }

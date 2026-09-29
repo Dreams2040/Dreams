@@ -32,6 +32,8 @@ const fmtMonth = ym => new Date(ym + '-01T00:00:00Z').toLocaleDateString(LOC, { 
 const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' م.ب' : Math.ceil(n / 1024) + ' ك.ب';
 const badge = (status, label) => `<span class="badge st-${esc(status)}"><i></i>${esc(label || state.lk?.statuses[status] || status)}</span>`;
 const visibleF = (f, d) => Object.entries(f.show_if || {}).every(([k, v]) => d[k] === v);
+const DEMO = window.PTMS_DEMO;   // نسخة العرض التجريبية (app/demo) تستبدل الخادم بمحاكٍ داخل المتصفح
+const docUrl = id => DEMO ? DEMO.docUrl(id) : `/api/documents/${id}`;
 const home = () => state.user?.role === 'admin' ? '#/stats' : '#/dashboard';
 
 const ICONS = {
@@ -402,7 +404,7 @@ function docsTable(d, errors = {}, readonly = false) {
       <td data-label="إلزامي/اختياري"><span class="tag ${t.required ? 'req' : ''}">${t.required ? 'إلزامي' : 'اختياري'}</span></td>
       ${readonly ? '' : `<td data-label="رفع الملف"><label class="btn sm ${f ? 'ghost' : 'primary'} file-btn">${f ? 'إعادة رفع' : 'اختيار ملف'}<input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" data-doc="${t.id}"></label></td>`}
       <td data-label="حالة الملف">${f ? `<span class="ok-text">✓ تم رفع الملف</span><small class="muted d-block">${esc(f.original_name)} — ${fmtSize(f.size)}</small>
-        <span class="row"><a class="link" href="/api/documents/${f.id}" target="_blank" rel="noopener">معاينة</a>${readonly ? '' : `<button type="button" class="link danger" data-act="deldoc" data-id="${f.id}">حذف</button>`}</span>`
+        <span class="row"><a class="link" href="${docUrl(f.id)}" data-id="${f.id}" target="_blank" rel="noopener">معاينة</a>${readonly ? '' : `<button type="button" class="link danger" data-act="deldoc" data-id="${f.id}">حذف</button>`}</span>`
         : `<span class="${t.required ? 'err' : 'muted'}">${t.required ? '✗ لم يُرفع' : 'لم يُرفع'}</span>`}</td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
@@ -508,10 +510,10 @@ async function viewRequest(params, id) {
   // معاينة المستندات داخل نافذة للموظفين
   $$('.docs a[target=_blank]').forEach(a => a.setAttribute('data-act', 'preview'));
   H.preview = el => {
-    const doc = d.documents.find(x => el.getAttribute('href').endsWith('/' + x.id));
+    const doc = d.documents.find(x => x.id === +el.dataset.id);
     const src = el.getAttribute('href');
     modal(doc.original_name, doc.mime === 'application/pdf' ? `<iframe class="preview" src="${src}" title="${esc(doc.original_name)}"></iframe>` : `<img class="preview" src="${src}" alt="${esc(doc.original_name)}">`,
-      [{ label: 'تحميل', cls: 'primary', run: () => { location.href = src + '?download=1'; } }, { label: 'إغلاق' }], { wide: true });
+      [...(DEMO ? [] : [{ label: 'تحميل', cls: 'primary', run: () => { location.href = src + '?download=1'; } }]), { label: 'إغلاق' }], { wide: true });
   };
   H.assist = async () => {
     const box = $('#assist');
@@ -698,9 +700,9 @@ async function viewReports(params) {
   f.kind ||= 'all';
   const q = new URLSearchParams(f), rep = await api('/reports?' + q);
   shell(`<div class="page-head no-print"><h1>التقارير</h1><div class="row">
-      <a class="btn success" href="/api/reports?${q}&format=csv" download>تصدير Excel</a>
+      ${DEMO ? '<span class="muted">التصدير والطباعة متاحان في النسخة المثبتة على الخادم</span>' : `<a class="btn success" href="/api/reports?${q}&format=csv" download>تصدير Excel</a>
       <button class="btn ghost" data-act="print" title="اختر «حفظ بصيغة PDF» من نافذة الطباعة">تصدير PDF</button>
-      <button class="btn ghost" data-act="print">طباعة</button></div></div>
+      <button class="btn ghost" data-act="print">طباعة</button>`}</div></div>
     <nav class="tabs no-print">${REPORT_KINDS.map(([k, l]) => `<button class="${k === f.kind ? 'on' : ''}" data-act="kind" data-k="${k}">${l}</button>`).join('')}</nav>
     <form class="card filters no-print" id="rfilters">
       <label>من تاريخ<input type="date" name="from" value="${esc(f.from)}"></label>
