@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="شعار الجهة">
+  <!-- شعار مؤقت: استبدل هذا الملف بشعار الجهة الرسمي بالاسم نفسه -->
+  <circle cx="32" cy="32" r="30" fill="#0b6e6e"/>
+  <circle cx="32" cy="32" r="26" fill="none" stroke="#c9a24a" stroke-width="2"/>
+  <path d="M16 26l16-8 16 8-16 8z" fill="#fff"/>
+  <path d="M22 29v8c6 4 14 4 20 0v-8l-10 5z" fill="#fff" opacity=".9"/>
+  <path d="M46 27v10" stroke="#c9a24a" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="46" cy="39" r="2.2" fill="#c9a24a"/>
+</svg>
